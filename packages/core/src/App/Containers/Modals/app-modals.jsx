@@ -11,9 +11,11 @@ import MT5AccountNeededModal from 'App/Components/Elements/Modals/mt5-account-ne
 import RedirectNoticeModal from 'App/Components/Elements/Modals/RedirectNotice';
 
 import CompleteUserProfileModal from './complete-user-profile-modal/complete-user-profile-modal';
+import TaxInfoModal from './tax-info-modal';
 import CompletedAssessmentModal from './completed-assessment-modal.jsx';
 import CooldownWarningModal from './cooldown-warning-modal.jsx';
 import CryptoTransactionProcessingModal from './crypto-transaction-processing-modal';
+import MigrationModal from './migration-modal';
 import NeedRealAccountForCashierModal from './need-real-account-for-cashier-modal';
 import ReadyToDepositModal from './ready-to-deposit-modal';
 import ReadyToVerifyModal from './ready-to-verify-modal';
@@ -85,6 +87,7 @@ const AppModals = observer(() => {
         has_wallet,
         is_authorize,
         is_logged_in,
+        is_platform_migrated,
         fetchFinancialAssessment,
         setCFDScore,
         landing_company_shortcode: active_account_landing_company,
@@ -94,7 +97,6 @@ const AppModals = observer(() => {
         loginid,
         is_client_store_initialized,
         has_active_real_account,
-        is_financial_information_incomplete,
         account_status,
     } = client;
     const { content_flag } = traders_hub;
@@ -121,6 +123,8 @@ const AppModals = observer(() => {
         toggleTncUpdateModal,
         setShouldShowCompleteUserProfileModal,
         is_complete_user_profile_modal_open,
+        setShouldShowTaxInfoModal,
+        is_tax_info_modal_open,
     } = ui;
     const temp_session_signup_params = SessionStore.get('signup_query_param');
     const url_params = new URLSearchParams(useLocation().search || temp_session_signup_params);
@@ -143,6 +147,14 @@ const AppModals = observer(() => {
     const no_currency = !has_set_currency || (!is_virtual && !currency);
     const should_update_fa = account_status?.status?.includes('update_fa');
 
+    // Tax info modal triggers
+    const needs_update_place_of_birth = account_status?.status?.includes('update_place_of_birth');
+    const needs_update_tin = account_status?.status?.includes('update_tin');
+    const needs_update_tax_residence = account_status?.status?.includes('update_tax_residence');
+    const needs_tax_info_update =
+        (needs_update_place_of_birth || needs_update_tin || needs_update_tax_residence) && has_active_real_account;
+    const show_place_of_birth = needs_update_place_of_birth;
+
     const { citizen, date_of_birth, address_line_1, address_city } = account_settings;
 
     const missing_information_account_settings =
@@ -152,8 +164,7 @@ const AppModals = observer(() => {
         has_active_real_account &&
         (!citizen || !date_of_birth || !address_line_1 || !address_city || no_currency);
 
-    const missing_fa =
-        (is_financial_information_incomplete || should_update_fa) && is_eu_user && has_active_real_account;
+    const missing_fa = should_update_fa && is_eu_user && has_active_real_account;
 
     React.useEffect(() => {
         if (is_tnc_needed) {
@@ -187,14 +198,29 @@ const AppModals = observer(() => {
         is_client_store_initialized,
         setShouldShowCompleteUserProfileModal,
         is_tnc_update_modal_open,
-        is_financial_information_incomplete,
         account_status,
+    ]);
+
+    React.useEffect(() => {
+        if (!is_client_store_initialized || !account_status || is_tnc_update_modal_open) return;
+
+        if (needs_tax_info_update && !is_complete_user_profile_modal_open) {
+            setShouldShowTaxInfoModal(true);
+        }
+    }, [
+        is_client_store_initialized,
+        account_status,
+        needs_tax_info_update,
+        is_tnc_update_modal_open,
+        is_complete_user_profile_modal_open,
+        setShouldShowTaxInfoModal,
     ]);
 
     const is_onboarding = window.location.href.includes(routes.onboarding);
 
     const should_show_trading_assessment_existing_user_form =
         is_logged_in &&
+        !is_complete_user_profile_modal_open &&
         active_account_landing_company === 'maltainvest' &&
         !is_trading_assessment_for_new_user_enabled &&
         is_trading_experience_incomplete &&
@@ -305,6 +331,19 @@ const AppModals = observer(() => {
                     no_currency={no_currency}
                 />
             );
+
+        if (is_tax_info_modal_open && !is_complete_user_profile_modal_open)
+            ComponentToLoad = (
+                <TaxInfoModal
+                    show_place_of_birth={!!show_place_of_birth}
+                    needs_update_tin={!!needs_update_tin}
+                    needs_update_tax_residence={!!needs_update_tax_residence}
+                />
+            );
+    }
+
+    if (is_platform_migrated) {
+        return <MigrationModal />;
     }
 
     return (

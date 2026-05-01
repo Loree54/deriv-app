@@ -343,7 +343,8 @@ export default class NotificationStore extends BaseStore {
         const { is_complete_user_profile_modal_open } = this.root_store.ui;
         const is_server_down = checkServerMaintenance(website_status);
 
-        if (website_status?.message?.length || is_server_down) {
+        const is_platform_migrated = website_status?.message === 'migrated';
+        if (!is_platform_migrated && (website_status?.message?.length || is_server_down)) {
             this.addNotificationMessage(this.client_notifications.site_maintenance);
         } else {
             this.removeNotificationByKey({ key: this.client_notifications.site_maintenance });
@@ -1173,12 +1174,7 @@ export default class NotificationStore extends BaseStore {
                     <Localize
                         i18n_default_text="We've updated our <0>terms and conditions</0>. To continue trading, you must review and accept the updated terms. You'll be prompted to accept them starting [<1>{{next_prompt_date}}</1>]."
                         components={[
-                            <StaticUrl
-                                key={0}
-                                className='link'
-                                href='terms-and-conditions'
-                                is_eu_url={!is_cr_account}
-                            />,
+                            <StaticUrl key={0} className='link' href='terms-and-conditions' />,
                             <Text key={1} size='xs' weight='bold' />,
                         ]}
                         values={{ next_prompt_date: formatDate(next_prompt_date, 'DD MMM YYYY') }}

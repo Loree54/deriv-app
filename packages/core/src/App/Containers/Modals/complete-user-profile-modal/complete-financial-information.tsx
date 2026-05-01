@@ -84,6 +84,9 @@ const CompleteFinancialAssessment = observer(
             tin_skipped,
         } = account_settings;
 
+        const filter_tax_identification_number =
+            tax_identification_number?.toLowerCase() === 'approved000' ? '' : tax_identification_number;
+
         const isFieldDisabled = (name: keyof GetSettings): boolean => {
             return !!immutable_fields?.includes(name);
         };
@@ -177,19 +180,23 @@ const CompleteFinancialAssessment = observer(
                         employment_status,
                         account_opening_reason,
                         tax_residence: tax_residence_item?.text || '',
-                        tax_identification_number,
-                        no_tax_information: tin_skipped === 1,
-                        tax_identification_confirm: !!tax_identification_number,
+                        tax_identification_number: filter_tax_identification_number,
+                        no_tax_information:
+                            tin_skipped === 1 &&
+                            shouldHideOccupationField(getTextFromKey('employment_status', employment_status)),
+                        tax_identification_confirm: !!filter_tax_identification_number,
                     });
                 } else {
                     // If no financial assessment data, initialize with account_settings values
                     setFinancialAssessmentInformation({});
                     setInitialFormValues({
                         tax_residence: tax_residence_item?.text || '',
-                        tax_identification_number,
+                        tax_identification_number: filter_tax_identification_number,
                         account_opening_reason,
-                        no_tax_information: tin_skipped === 1,
-                        tax_identification_confirm: !!tax_identification_number,
+                        no_tax_information:
+                            tin_skipped === 1 &&
+                            shouldHideOccupationField(getTextFromKey('employment_status', employment_status)),
+                        tax_identification_confirm: !!filter_tax_identification_number,
                     });
                     setFinancialInformationVersion('');
                 }
@@ -223,6 +230,10 @@ const CompleteFinancialAssessment = observer(
                 if (values.no_tax_information) {
                     delete settings_payload.tax_residence;
                     delete settings_payload.tax_identification_number;
+                    (settings_payload as Record<string, unknown>).employment_status = getTextFromKey(
+                        'employment_status',
+                        values.employment_status as string
+                    );
                 }
 
                 if (isFieldDisabled('tax_residence')) {
@@ -326,6 +337,84 @@ const CompleteFinancialAssessment = observer(
             ]
         );
 
+        const isCurrentStepValid = (values: Partial<TFinancialInformationForm>): boolean => {
+            if (current_step === 1) {
+                // Step 1 required fields
+                if (!isFieldDisabled('employment_status') && !values.employment_status) {
+                    return false;
+                }
+                if (!isFieldDisabled('account_opening_reason') && !values.account_opening_reason) {
+                    return false;
+                }
+                // Tax residence is required if no_tax_information is false
+                if (!values.no_tax_information && !isFieldDisabled('tax_residence') && !values.tax_residence) {
+                    return false;
+                }
+                // Tax identification number validation (complex conditional logic)
+                if (
+                    !values.no_tax_information &&
+                    values.tax_residence &&
+                    !isFieldDisabled('tax_identification_number')
+                ) {
+                    const is_confirm_false =
+                        values.tax_identification_confirm === false || values.tax_identification_confirm === 0;
+                    if (is_confirm_false && !values.tax_identification_number) {
+                        return false;
+                    }
+                    if (tin_validation_config && Object.keys(tin_validation_config).length > 0) {
+                        const is_tin_mandatory =
+                            (tin_validation_config as { is_tin_mandatory?: number | boolean })?.is_tin_mandatory ===
+                                1 ||
+                            (tin_validation_config as { is_tin_mandatory?: number | boolean })?.is_tin_mandatory ===
+                                true;
+                        if (is_tin_mandatory && !values.tax_identification_number && !is_confirm_false) {
+                            return false;
+                        }
+                    }
+                }
+                return true;
+            } else if (current_step === 2) {
+                // Step 2 required fields (only if they should be shown)
+                if (
+                    shouldShowFinancialField('employment_industry') &&
+                    !shouldHideByFinancialQuestions('employment_industry', values) &&
+                    !values.employment_industry
+                ) {
+                    return false;
+                }
+                if (shouldShowFinancialField('occupation') && !shouldHideByFinancialQuestions('occupation', values)) {
+                    const is_occupation_free_text = financial_questions?.questions?.occupation?.type === 'free_text';
+                    if (is_occupation_free_text) {
+                        if (!values.company || !values.position) {
+                            return false;
+                        }
+                    } else if (!values.occupation) {
+                        return false;
+                    }
+                }
+                if (shouldShowFinancialField('income_source') && !values.income_source) {
+                    return false;
+                }
+                if (shouldShowFinancialField('net_income') && !values.net_income) {
+                    return false;
+                }
+                if (shouldShowFinancialField('estimated_worth') && !values.estimated_worth) {
+                    return false;
+                }
+                if (shouldShowFinancialField('investment_intention') && !values.investment_intention) {
+                    return false;
+                }
+                return true;
+            } else if (current_step === 3) {
+                // Step 3 required fields
+                if (shouldShowFinancialField('source_of_wealth') && !values.source_of_wealth) {
+                    return false;
+                }
+                return true;
+            }
+            return true;
+        };
+
         const handleNext = (
             values: Partial<TFinancialInformationForm>,
             helpers: FormikHelpers<Partial<TFinancialInformationForm>>
@@ -364,6 +453,19 @@ const CompleteFinancialAssessment = observer(
                 }
             }
             /**
+             * Validate account_opening_reason value against available list items
+             * If the value doesn't match any list item, set it to empty
+             */
+            if (form_data.account_opening_reason) {
+                const account_opening_reason_list = getAccountOpeningReasonList();
+                const is_valid_value = account_opening_reason_list.some(
+                    item => item.value === form_data.account_opening_reason
+                );
+                if (!is_valid_value) {
+                    form_data.account_opening_reason = '';
+                }
+            }
+            /**
              * Remove hidden fields determined by WS rules
              */
             if (shouldHideByFinancialQuestions('occupation', form_data)) {
@@ -393,8 +495,8 @@ const CompleteFinancialAssessment = observer(
                                 isSubmitting,
                                 values,
                                 setFieldValue,
-                                isValid,
                                 handleChange,
+                                isValid,
                                 setFieldTouched,
                                 validateForm,
                                 setFieldError,
@@ -517,7 +619,7 @@ const CompleteFinancialAssessment = observer(
                                                     </Field>
                                                 </div>
                                                 {/* No tax information field */}
-                                                {!!tax_identification_number &&
+                                                {filter_tax_identification_number === '' &&
                                                     tin_skipped === 1 &&
                                                     shouldHideOccupationField(
                                                         getTextFromKey('employment_status', values?.employment_status)
@@ -536,7 +638,10 @@ const CompleteFinancialAssessment = observer(
                                                         </div>
                                                     )}
                                                 {/* Tax Residence Field */}
-                                                {!values.no_tax_information && (
+                                                {(!shouldHideOccupationField(
+                                                    getTextFromKey('employment_status', values?.employment_status)
+                                                ) ||
+                                                    !values.no_tax_information) && (
                                                     <>
                                                         <div className='complete-user-profile-modal__bottom-margin'>
                                                             <Text
@@ -826,6 +931,7 @@ const CompleteFinancialAssessment = observer(
                                                                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                                                                     setFieldValue('company', e.target.value, false);
                                                                 }}
+                                                                value={values.company ?? ''}
                                                             />
                                                             -
                                                             <FormInputField
@@ -837,6 +943,7 @@ const CompleteFinancialAssessment = observer(
                                                                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                                                                     setFieldValue('position', e.target.value, false);
                                                                 }}
+                                                                value={values.position ?? ''}
                                                             />
                                                         </div>
                                                     ) : (
@@ -1123,7 +1230,7 @@ const CompleteFinancialAssessment = observer(
                                         <Modal.Footer className='complete-user-profile-modal__footer'>
                                             <FormSubmitButton
                                                 label={localize('Next')}
-                                                disabled={isSubmitting || !isValid}
+                                                disabled={isSubmitting || !isValid || !isCurrentStepValid(values)}
                                                 is_loading={isSubmitting}
                                                 className='complete-user-profile-modal__submit-button'
                                             />
